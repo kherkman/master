@@ -103,7 +103,7 @@
 
         .export-settings { display: flex; gap: 5px; align-items: center; background: #222; padding: 5px; border-radius: 4px; }
 
-        /* Modal Info - Updated for Scrollbar and Top Close Button */
+        /* Modal Info */
         .modal {
             display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%;
             background-color: rgba(0,0,0,0.8); backdrop-filter: blur(2px);
@@ -121,14 +121,13 @@
         
         #infoContent { 
             margin: 0; white-space: pre-wrap; font-family: monospace; line-height: 1.6; 
-            overflow-y: auto; /* Vertical Slider */
+            overflow-y: auto;
             text-align: left;
             padding: 10px;
             background: rgba(0,0,0,0.3);
             border: 1px solid #333;
             border-radius: 4px;
         }
-        /* Scrollbar styling for webkit */
         #infoContent::-webkit-scrollbar { width: 10px; }
         #infoContent::-webkit-scrollbar-track { background: #111; }
         #infoContent::-webkit-scrollbar-thumb { background: #444; border-radius: 5px; }
@@ -566,6 +565,17 @@ createUI();
 document.getElementById('btnPlay').onclick = async () => { if(ctx.state === 'suspended') await ctx.resume(); if(masterBuffer) playAudio(pauseTime); };
 document.getElementById('btnStop').onclick = () => { stopAudio(); pauseTime=0; updatePlayhead(0); };
 
+// SPACEBAR CONTROL
+document.addEventListener('keydown', async (e) => {
+    if (e.code === 'Space') {
+        e.preventDefault();
+        if (!masterBuffer) return;
+        if (ctx.state === 'suspended') await ctx.resume();
+        if (isPlaying) stopAudio();
+        else playAudio(pauseTime);
+    }
+});
+
 function playAudio(offset) {
     if(isPlaying) stopAudio();
     sourceNode = ctx.createBufferSource(); sourceNode.buffer = masterBuffer;
@@ -690,11 +700,35 @@ function updatePlayhead(pct) { document.getElementById('playhead').style.left = 
 document.getElementById('btnSoloRef').onclick = function() { isRefSolo = !isRefSolo; this.classList.toggle('active'); updateRefMute(); }
 function updateRefMute() { nodes.masterOut.gain.value = isRefSolo ? 0 : 1; nodes.refMute.gain.value = isRefSolo ? 1 : 0; }
 function getTruePeak(b) { let max=0, d=b.getChannelData(0); for(let i=0;i<d.length;i+=100) if(Math.abs(d[i])>max) max=Math.abs(d[i]); return 20*Math.log10(max||0.001); }
+
+// UPDATED DRAW WAVE
 function drawWave(buf, id, col) {
     const c = document.getElementById(id); c.width = c.offsetWidth; c.height = c.offsetHeight;
     const ctx = c.getContext('2d'); ctx.fillStyle = col; ctx.clearRect(0,0,c.width,c.height);
-    const data = buf.getChannelData(0); const step = Math.ceil(data.length/c.width); const amp = c.height/2;
-    for(let i=0; i<c.width; i++) { let min=1, max=-1; for(let j=0; j<step; j++) { const v=data[i*step+j]; if(v<min)min=v; if(v>max)max=v; } ctx.fillRect(i, (1+min)*amp, 1, Math.max(1,(max-min)*amp)); }
+    const data = buf.getChannelData(0); 
+    
+    // Calculate scale based on Master duration if drawing Reference
+    let drawDuration = buf.duration;
+    if (id === 'canvasRef' && masterBuffer) {
+        drawDuration = masterBuffer.duration;
+    }
+    
+    // Step based on the draw duration
+    const step = (drawDuration * buf.sampleRate) / c.width;
+    const amp = c.height/2;
+    
+    for(let i=0; i<c.width; i++) { 
+        const startIdx = Math.floor(i * step);
+        // If ref is shorter than master, stop drawing
+        if (startIdx >= data.length) break;
+        
+        let min=1, max=-1; 
+        for(let j=0; j<step; j++) { 
+            if (startIdx + j >= data.length) break;
+            const v=data[startIdx+j]; if(v<min)min=v; if(v>max)max=v; 
+        } 
+        ctx.fillRect(i, (1+min)*amp, 1, Math.max(1,(max-min)*amp)); 
+    }
 }
 
 function loadPreset() {
