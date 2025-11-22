@@ -103,16 +103,36 @@
 
         .export-settings { display: flex; gap: 5px; align-items: center; background: #222; padding: 5px; border-radius: 4px; }
 
-        /* Modal Info */
+        /* Modal Info - Updated for Scrollbar and Top Close Button */
         .modal {
             display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%;
             background-color: rgba(0,0,0,0.8); backdrop-filter: blur(2px);
         }
         .modal-content {
-            background-color: var(--panel-color); margin: 15% auto; padding: 20px; border: 1px solid #444;
-            width: 50%; border-radius: 8px; text-align: center; color: #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            background-color: var(--panel-color); margin: 5% auto; padding: 20px; border: 1px solid #444;
+            width: 60%; max-height: 85vh; border-radius: 8px; color: #fff; 
+            box-shadow: 0 0 30px rgba(0,0,0,0.7); display: flex; flex-direction: column;
         }
-        #infoContent { margin: 20px 0; white-space: pre-wrap; font-family: monospace; line-height: 1.5; }
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;
+        }
+        .modal-header h2 { margin: 0; color: var(--accent); }
+        
+        #infoContent { 
+            margin: 0; white-space: pre-wrap; font-family: monospace; line-height: 1.6; 
+            overflow-y: auto; /* Vertical Slider */
+            text-align: left;
+            padding: 10px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+        /* Scrollbar styling for webkit */
+        #infoContent::-webkit-scrollbar { width: 10px; }
+        #infoContent::-webkit-scrollbar-track { background: #111; }
+        #infoContent::-webkit-scrollbar-thumb { background: #444; border-radius: 5px; }
+        #infoContent::-webkit-scrollbar-thumb:hover { background: #555; }
         
         .stats-row { font-size:11px; color:#aaa; margin-left:15px; display: flex; gap: 15px; }
         .stat-val { color: #fff; font-weight: bold; }
@@ -124,9 +144,11 @@
 <!-- INFO MODAL -->
 <div id="infoModal" class="modal">
     <div class="modal-content">
-        <h2 style="margin-top:0;">INFO</h2>
+        <div class="modal-header">
+            <h2>INFO & OHJEET</h2>
+            <button class="primary" onclick="closeInfo()">❌ Sulje</button>
+        </div>
         <div id="infoContent">Ladataan...</div>
-        <button class="primary" onclick="closeInfo()">Sulje</button>
     </div>
 </div>
 
@@ -360,23 +382,10 @@ function initGraph() {
     nodes.refMute.gain.value = 0;
     nodes.monitorGain.gain.value = 1;
 
-    // Chain Construction
-    // InputGain connects to HPF Chain in playAudio()
-    
-    // End of EQ chain -> PreLim
-    prev.connect(nodes.preLimGain); 
-    nodes.preLimGain.connect(nodes.limiter);
+    prev.connect(nodes.preLimGain); nodes.preLimGain.connect(nodes.limiter);
     nodes.limiter.connect(nodes.masterOut);
-    
-    // Master Route
-    nodes.masterOut.connect(nodes.analyserM);
-    nodes.analyserM.connect(nodes.monitorGain); // Monitor path
-    
-    // Ref Route
-    nodes.refMute.connect(nodes.monitorGain); // Monitor path
-
-    // Final Output
-    nodes.monitorGain.connect(ctx.destination);
+    nodes.masterOut.connect(nodes.analyserM); nodes.analyserM.connect(nodes.monitorGain);
+    nodes.refMute.connect(nodes.monitorGain); nodes.monitorGain.connect(ctx.destination);
 }
 initGraph();
 
@@ -427,11 +436,10 @@ async function calcProcessedLUFS() {
     const offCtx = new OfflineAudioContext(2, dur * masterBuffer.sampleRate, masterBuffer.sampleRate);
     const src = offCtx.createBufferSource(); src.buffer = masterBuffer;
     
-    // Add Input Gain to chain
+    // Input Gain
     const inGain = offCtx.createGain();
     inGain.gain.value = Math.pow(10, parseFloat(document.getElementById('inputGain').value)/20);
-    src.connect(inGain);
-    let ch = inGain;
+    src.connect(inGain); let ch = inGain;
     
     const hSlope = parseInt(document.getElementById('slopeHPF').value);
     const lSlope = parseInt(document.getElementById('slopeLPF').value);
@@ -495,7 +503,6 @@ function updateDSP() {
     nodes.limiter.threshold.setTargetAtTime(ceilDb, ctx.currentTime, 0.05);
 }
 
-// Monitor Volume Listener
 document.getElementById('monitorVol').oninput = (e) => {
     nodes.monitorGain.gain.setTargetAtTime(parseFloat(e.target.value), ctx.currentTime, 0.05);
 }
@@ -563,7 +570,6 @@ function playAudio(offset) {
     if(isPlaying) stopAudio();
     sourceNode = ctx.createBufferSource(); sourceNode.buffer = masterBuffer;
     
-    // CONNECT INPUT GAIN
     sourceNode.connect(nodes.inputGain);
     nodes.inputGain.connect(nodes.hpfChain[0]);
     
