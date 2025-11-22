@@ -462,7 +462,8 @@ async function calcProcessedLUFS() {
     const rendered = await offCtx.startRendering();
     
     const lufs = await calculateLUFS(rendered);
-    document.getElementById('outputLufsVal').innerText = lufs.toFixed(1) + " LUFS";
+    const tp = getTruePeak(rendered);
+    document.getElementById('outputLufsVal').innerText = lufs.toFixed(1) + " LUFS | " + tp.toFixed(2) + " dBTP";
     setStatus("");
 }
 
@@ -565,7 +566,7 @@ createUI();
 document.getElementById('btnPlay').onclick = async () => { if(ctx.state === 'suspended') await ctx.resume(); if(masterBuffer) playAudio(pauseTime); };
 document.getElementById('btnStop').onclick = () => { stopAudio(); pauseTime=0; updatePlayhead(0); };
 
-// SPACEBAR CONTROL
+// KEYBOARD CONTROLS
 document.addEventListener('keydown', async (e) => {
     if (e.code === 'Space') {
         e.preventDefault();
@@ -573,6 +574,17 @@ document.addEventListener('keydown', async (e) => {
         if (ctx.state === 'suspended') await ctx.resume();
         if (isPlaying) stopAudio();
         else playAudio(pauseTime);
+    } else if (e.key === 'r' || e.code === 'KeyR') {
+        e.preventDefault();
+        document.getElementById('btnSoloRef').click();
+    } else if (e.key === 's' || e.code === 'KeyS') {
+        e.preventDefault();
+        if(masterBuffer) {
+            stopAudio();
+            pauseTime = 0;
+            updatePlayhead(0);
+            document.getElementById('timeDisplay').innerText = "0:00.0";
+        }
     }
 });
 
@@ -701,27 +713,20 @@ document.getElementById('btnSoloRef').onclick = function() { isRefSolo = !isRefS
 function updateRefMute() { nodes.masterOut.gain.value = isRefSolo ? 0 : 1; nodes.refMute.gain.value = isRefSolo ? 1 : 0; }
 function getTruePeak(b) { let max=0, d=b.getChannelData(0); for(let i=0;i<d.length;i+=100) if(Math.abs(d[i])>max) max=Math.abs(d[i]); return 20*Math.log10(max||0.001); }
 
-// UPDATED DRAW WAVE
+// DRAW WAVE
 function drawWave(buf, id, col) {
     const c = document.getElementById(id); c.width = c.offsetWidth; c.height = c.offsetHeight;
     const ctx = c.getContext('2d'); ctx.fillStyle = col; ctx.clearRect(0,0,c.width,c.height);
     const data = buf.getChannelData(0); 
-    
-    // Calculate scale based on Master duration if drawing Reference
     let drawDuration = buf.duration;
     if (id === 'canvasRef' && masterBuffer) {
         drawDuration = masterBuffer.duration;
     }
-    
-    // Step based on the draw duration
     const step = (drawDuration * buf.sampleRate) / c.width;
     const amp = c.height/2;
-    
     for(let i=0; i<c.width; i++) { 
         const startIdx = Math.floor(i * step);
-        // If ref is shorter than master, stop drawing
         if (startIdx >= data.length) break;
-        
         let min=1, max=-1; 
         for(let j=0; j<step; j++) { 
             if (startIdx + j >= data.length) break;
@@ -743,9 +748,7 @@ function loadPreset() {
     else if(type === 'bright') { eqParams[1].gain=-2; eqParams[13].gain=2.5; eqParams[15].gain=3; }
     else if(type === 'bass') { eqParams[1].gain=3; eqParams[2].gain=2; }
     else if(type === 'dynamic') {
-        // 80Hz Low Control
         eqParams[2].compThresh = -18; eqParams[2].compRatio = 2.5;
-        // 5kHz & 8kHz harshness control
         eqParams[12].compThresh = -22; eqParams[12].compRatio = 2.0;
         eqParams[13].compThresh = -20; eqParams[13].compRatio = 2.5;
     }
@@ -754,7 +757,6 @@ function loadPreset() {
         e.value = eqParams[e.dataset.i].gain; nodes.eq[e.dataset.i].gain.value = e.value; 
         document.getElementById('g-val-'+e.dataset.i).innerText=parseFloat(e.value).toFixed(1); 
     });
-    // Update UI for Dynamic
     document.querySelectorAll('.eq-thr').forEach(e => { 
         e.value = eqParams[e.dataset.i].compThresh; 
         document.getElementById('t-val-'+e.dataset.i).innerText=e.value+" dB";
@@ -789,7 +791,6 @@ document.getElementById('btnRender').onclick = async () => {
             const offCtx = new OfflineAudioContext(2, dur * exportSR, exportSR);
             const src = offCtx.createBufferSource(); src.buffer = masterBuffer; 
             
-            // Render Input Gain
             const inGain = offCtx.createGain();
             inGain.gain.value = Math.pow(10, parseFloat(document.getElementById('inputGain').value)/20);
             src.connect(inGain); let ch = inGain;
