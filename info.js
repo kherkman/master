@@ -6,6 +6,9 @@ Tämä työkalu on suunniteltu viimeistelemään äänitiedostosi (masterointi).
    - Lataa masteroitava tiedosto ("Lataa Master").
    - Lataa halutessasi referenssikappale ("Lataa Ref"). Tämä auttaa vertailemaan omaa soundiasi ammattilaisen miksaukseen.
    - Ohjelma tunnistaa automaattisesti tiedostojen näytteenottotaajuuden (Sample Rate) ja bittisyvyyden.
+   - "space" -painike käynnistää/pausettaa toiston.
+   - "s" -painike pysäyttää toiston ja siirtää toistopään alkuun.
+   - "r" -painike soittaa vain referenssiraidan vertailua varten.
 
 2. SUODATTIMET (FILTERS)
    - HPF (High Pass Filter): Leikkaa turhat matalat taajuudet pois. Yleensä 20-30 Hz on turvallinen alue poistamaan "mutaa" ja vapauttamaan energiaa.
