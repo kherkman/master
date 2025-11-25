@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Mastering Studio</title>
+    <title>Web Mastering Studio - Final V7 (MP3)</title>
+    <!-- LAMEJS MP3 ENCODER -->
+    <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
     <style>
         :root {
             --bg-color: #121212;
@@ -189,14 +191,16 @@
                     </select>
                 </div>
                 <div class="col">
-                    <span class="label-small">Export Bit</span>
+                    <span class="label-small">Format/Bit</span>
                     <select id="exportBit">
-                        <option value="16">16-bit</option>
-                        <option value="24">24-bit</option>
-                        <option value="32">32-bit Float</option>
+                        <option value="16">WAV 16-bit</option>
+                        <option value="24">WAV 24-bit</option>
+                        <option value="32">WAV 32-bit</option>
+                        <option value="mp3-128">MP3 128kbps</option>
+                        <option value="mp3-320">MP3 320kbps</option>
                     </select>
                 </div>
-                <button class="primary" id="btnRender">📀 Tallenna WAV</button>
+                <button class="primary" id="btnRender">📀 Tallenna</button>
             </div>
         </div>
     </div>
@@ -350,7 +354,7 @@ const nodes = {
     analyserM: ctx.createAnalyser(),
     analyserR: ctx.createAnalyser(),
     refMute: ctx.createGain(),
-    monitorGain: ctx.createGain() // Monitor Volume
+    monitorGain: ctx.createGain()
 };
 
 const bands = [30, 50, 80, 120, 200, 300, 400, 600, 800, 1200, 2000, 3000, 5000, 8000, 12000, 16000];
@@ -422,7 +426,7 @@ async function calculateLUFS(buffer) {
     return -0.691 + 10 * Math.log10(sumEnergy / finalBlocks.length);
 }
 
-/* --- OUTPUT LUFS SIMULATION --- */
+/* --- OUTPUT LUFS & TP SIMULATION --- */
 async function calcProcessedLUFS() {
     if(!masterBuffer) return;
     document.getElementById('outputLufsVal').innerText = "...";
@@ -435,7 +439,6 @@ async function calcProcessedLUFS() {
     const offCtx = new OfflineAudioContext(2, dur * masterBuffer.sampleRate, masterBuffer.sampleRate);
     const src = offCtx.createBufferSource(); src.buffer = masterBuffer;
     
-    // Input Gain
     const inGain = offCtx.createGain();
     inGain.gain.value = Math.pow(10, parseFloat(document.getElementById('inputGain').value)/20);
     src.connect(inGain); let ch = inGain;
@@ -713,15 +716,12 @@ document.getElementById('btnSoloRef').onclick = function() { isRefSolo = !isRefS
 function updateRefMute() { nodes.masterOut.gain.value = isRefSolo ? 0 : 1; nodes.refMute.gain.value = isRefSolo ? 1 : 0; }
 function getTruePeak(b) { let max=0, d=b.getChannelData(0); for(let i=0;i<d.length;i+=100) if(Math.abs(d[i])>max) max=Math.abs(d[i]); return 20*Math.log10(max||0.001); }
 
-// DRAW WAVE
 function drawWave(buf, id, col) {
     const c = document.getElementById(id); c.width = c.offsetWidth; c.height = c.offsetHeight;
     const ctx = c.getContext('2d'); ctx.fillStyle = col; ctx.clearRect(0,0,c.width,c.height);
     const data = buf.getChannelData(0); 
     let drawDuration = buf.duration;
-    if (id === 'canvasRef' && masterBuffer) {
-        drawDuration = masterBuffer.duration;
-    }
+    if (id === 'canvasRef' && masterBuffer) { drawDuration = masterBuffer.duration; }
     const step = (drawDuration * buf.sampleRate) / c.width;
     const amp = c.height/2;
     for(let i=0; i<c.width; i++) { 
@@ -739,8 +739,6 @@ function drawWave(buf, id, col) {
 function loadPreset() {
     const type = document.getElementById('presetSelect').value; 
     document.querySelectorAll('.eq-gain').forEach(e => { e.value=0; e.dispatchEvent(new Event('input')); });
-    
-    // Reset Dyn
     document.querySelectorAll('.eq-thr').forEach(e => { e.value=0; e.dispatchEvent(new Event('input')); });
     document.querySelectorAll('.eq-rat').forEach(e => { e.value=1; e.dispatchEvent(new Event('input')); });
 
@@ -785,9 +783,12 @@ document.getElementById('btnRender').onclick = async () => {
     if(!masterBuffer) return; setStatus("TALLENNETAAN...");
     setTimeout(async () => {
         try {
-            const exportSR = parseInt(document.getElementById('exportSR').value); const exportBit = parseInt(document.getElementById('exportBit').value);
+            const exportSR = parseInt(document.getElementById('exportSR').value); 
+            const formatVal = document.getElementById('exportBit').value;
+            
             const cutS = parseFloat(document.getElementById('cutStart').value), cutE = parseFloat(document.getElementById('cutEnd').value);
             const dur = masterBuffer.duration - cutS - cutE;
+            
             const offCtx = new OfflineAudioContext(2, dur * exportSR, exportSR);
             const src = offCtx.createBufferSource(); src.buffer = masterBuffer; 
             
@@ -808,8 +809,18 @@ document.getElementById('btnRender').onclick = async () => {
             const c = offCtx.createDynamicsCompressor(); c.threshold.value = document.getElementById('limiterCeil').value; c.ratio.value = 20; c.attack.value=0.003;
             g.connect(c); c.connect(offCtx.destination); src.start(0, cutS);
             const rendered = await offCtx.startRendering();
-            const wavBlob = bufferToWave(rendered, exportBit);
-            const a = document.createElement('a'); a.href=URL.createObjectURL(wavBlob); a.download='master.wav'; a.click();
+            
+            let blob, ext;
+            if (formatVal.startsWith('mp3')) {
+                const kbps = parseInt(formatVal.split('-')[1]);
+                blob = bufferToMp3(rendered, kbps);
+                ext = 'mp3';
+            } else {
+                blob = bufferToWave(rendered, parseInt(formatVal));
+                ext = 'wav';
+            }
+            
+            const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='master.'+ext; a.click();
         } catch(e){ alert(e); } finally { setStatus(""); }
     }, 50);
 };
@@ -831,6 +842,38 @@ function bufferToWave(abuffer, bitDepth) {
             else if (bitDepth === 32) { view.setFloat32(pos, s, true); pos += 4; }
         } offset++;
     } return new Blob([buffer], {type: "audio/wav"});
+}
+
+function bufferToMp3(buffer, kbps) {
+    if (!window.lamejs) { alert("LameJS-kirjasto puuttuu."); return null; }
+    const channels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const mp3enc = new lamejs.Mp3Encoder(channels, sampleRate, kbps);
+    const mp3Data = [];
+    
+    const left = buffer.getChannelData(0);
+    const right = channels > 1 ? buffer.getChannelData(1) : left;
+    
+    const sampleBlockSize = 1152;
+    const left16 = new Int16Array(left.length);
+    const right16 = new Int16Array(right.length);
+    
+    for(let i=0; i<left.length; i++) {
+        left16[i] = Math.max(-1, Math.min(1, left[i])) * 32767;
+        right16[i] = Math.max(-1, Math.min(1, right[i])) * 32767;
+    }
+    
+    for(let i=0; i<left16.length; i+=sampleBlockSize) {
+        const leftChunk = left16.subarray(i, i+sampleBlockSize);
+        const rightChunk = right16.subarray(i, i+sampleBlockSize);
+        const mp3buf = mp3enc.encodeBuffer(leftChunk, rightChunk);
+        if(mp3buf.length > 0) mp3Data.push(mp3buf);
+    }
+    
+    const mp3buf = mp3enc.flush();
+    if(mp3buf.length > 0) mp3Data.push(mp3buf);
+    
+    return new Blob(mp3Data, {type: 'audio/mp3'});
 }
 </script>
 </body>
